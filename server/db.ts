@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, members, contributions, InsertMember, InsertContribution } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,148 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get user: database not available");
+    return undefined;
+  }
+
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createMember(memberId: InsertMember) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot create member: database not available");
+    return undefined;
+  }
+
+  try {
+    const result = await db.insert(members).values(memberId);
+    return result;
+  } catch (error) {
+    console.error("[Database] Failed to create member:", error);
+    throw error;
+  }
+}
+
+export async function getMemberByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get member: database not available");
+    return undefined;
+  }
+
+  const result = await db.select().from(members).where(eq(members.userId, userId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateMember(userId: number, updates: Partial<InsertMember>) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot update member: database not available");
+    return undefined;
+  }
+
+  try {
+    await db.update(members).set(updates).where(eq(members.userId, userId));
+  } catch (error) {
+    console.error("[Database] Failed to update member:", error);
+    throw error;
+  }
+}
+
+export async function createContribution(contribution: InsertContribution) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot create contribution: database not available");
+    return undefined;
+  }
+
+  try {
+    const result = await db.insert(contributions).values(contribution);
+    return result;
+  } catch (error) {
+    console.error("[Database] Failed to create contribution:", error);
+    throw error;
+  }
+}
+
+export async function getContributionsByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get contributions: database not available");
+    return [];
+  }
+
+  try {
+    const result = await db.select().from(contributions).where(eq(contributions.userId, userId));
+    return result;
+  } catch (error) {
+    console.error("[Database] Failed to get contributions:", error);
+    return [];
+  }
+}
+
+export async function updateContributionStatus(id: number, status: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot update contribution: database not available");
+    return undefined;
+  }
+
+  try {
+    await db.update(contributions).set({ status: status as any }).where(eq(contributions.id, id));
+  } catch (error) {
+    console.error("[Database] Failed to update contribution:", error);
+    throw error;
+  }
+}
+
+export async function updateUserMembershipStatus(userId: number, isMember: boolean, status: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot update user: database not available");
+    return undefined;
+  }
+
+  try {
+    await db.update(users).set({
+      isMember,
+      membershipStatus: status as any,
+      joinedAt: isMember ? new Date() : null,
+    }).where(eq(users.id, userId));
+  } catch (error) {
+    console.error("[Database] Failed to update user membership:", error);
+    throw error;
+  }
+}
+
+export async function getCollectiveStats() {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get stats: database not available");
+    return { totalMembers: 0, totalPooled: "0", totalInterest: "0" };
+  }
+
+  try {
+    const memberCount = await db.select().from(members);
+    const allContributions = await db.select().from(contributions).where(eq(contributions.status, "completed"));
+    
+    let totalPooled = 0;
+    allContributions.forEach(c => {
+      totalPooled += parseFloat(c.amount.toString());
+    });
+
+    return {
+      totalMembers: memberCount.length,
+      totalPooled: totalPooled.toFixed(2),
+      totalInterest: "0", // Would be calculated from actual interest earnings
+    };
+  } catch (error) {
+    console.error("[Database] Failed to get stats:", error);
+    return { totalMembers: 0, totalPooled: "0", totalInterest: "0" };
+  }
+}
